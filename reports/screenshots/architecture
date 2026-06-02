@@ -1,0 +1,13 @@
+digraph {
+	A [label="Raw Data (Credit Card Transactions)"]
+	B [label="Data Preprocessing"]
+	C [label="Feature Engineering"]
+	D [label="XGBoost Model"]
+	E [label="Fraud Probability (0–1)"]
+	F [label="Streamlit Dashboard"]
+	A -> B
+	B -> C
+	C -> D
+	D -> E
+	E -> F
+}

@@ -1,0 +1,70 @@
+# Python
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# Virtual Environments
+
+venv/
+env/
+.venv/
+
+# Conda
+
+.conda/
+
+# Environment Variables
+
+.env
+
+# Streamlit
+
+.streamlit/secrets.toml
+
+# Models
+
+models/*.pkl
+models/*.joblib
+models/*.sav
+
+# Data
+
+data/raw/*
+data/processed/*
+
+# MacOS
+
+.DS_Store
+
+# VS Code
+
+.vscode/
+
+# Logs
+
+logs/
+*.log
+
+# Coverage
+
+.coverage
+htmlcov/
+
+# Build
+
+build/
+dist/
+*.egg-info/
+
+# Pytest
+
+.pytest_cache/
+
+# Mypy
+
+.mypy_cache/
