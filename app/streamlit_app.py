@@ -1,11 +1,15 @@
 import streamlit as st
 import numpy as np
 import joblib
+import os
 
 # -----------------------------
-# LOAD MODEL
+# LOAD MODEL (FIXED FOR STREAMLIT CLOUD)
 # -----------------------------
-model = joblib.load("models/xgb_fraud_model.pkl")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "xgb_fraud_model.pkl")
+
+model = joblib.load(MODEL_PATH)
 
 # -----------------------------
 # PAGE CONFIG
