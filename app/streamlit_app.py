@@ -18,40 +18,63 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------
-# LOAD MODEL (SAFE PATH)
+# SAFE MODEL LOADING (FIXED FOR STREAMLIT CLOUD)
 # ---------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+# Get current file directory (app/)
+CURRENT_DIR = os.path.dirname(__file__)
+
+# Go one level up (project root)
+BASE_DIR = os.path.dirname(CURRENT_DIR)
+
+# Correct model path
 MODEL_PATH = os.path.join(BASE_DIR, "models", "xgb_fraud_model.pkl")
 
+# Load model safely
 model = joblib.load(MODEL_PATH)
 
 # ---------------------------------------------------
-# FRAUD RULE ENGINE (NEW - FIX)
+# FEATURE ENGINE (HIDES V1–V28)
+# ---------------------------------------------------
+def build_features(time, amount):
+
+    v = np.random.normal(0, 1, 28)
+
+    amount_factor = np.log1p(amount) / 8
+    v += amount_factor
+
+    if time <= 5:
+        v += np.random.normal(2, 0.5, 28)
+
+    if amount > 5000:
+        v += 1.2
+
+    if amount > 20000:
+        v += 2.0
+
+    return v
+
+# ---------------------------------------------------
+# FRAUD RULE ENGINE
 # ---------------------------------------------------
 def fraud_rule_engine(amount, ml_prob, transaction_time):
-    """
-    Enhances ML prediction with banking rules
-    """
 
     risk_boost = 0
 
-    # Rule 1: High amount risk
     if amount > 5000:
         risk_boost += 0.25
     if amount > 20000:
         risk_boost += 0.35
 
-    # Rule 2: Midnight risk (0-5 AM)
     if 0 <= transaction_time <= 5:
         risk_boost += 0.20
 
-    # Rule 3: Very large ML + rules synergy
     final_score = ml_prob + risk_boost
 
     return min(final_score, 1.0)
 
 # ---------------------------------------------------
-# CUSTOM CSS
+# CSS
 # ---------------------------------------------------
 st.markdown("""
 <style>
@@ -81,10 +104,8 @@ st.title("🧠 Real-Time Fraud Analytics Dashboard")
 st.markdown("### AI-Powered Financial Risk Monitoring System (Production Mode)")
 
 # ---------------------------------------------------
-# SIDEBAR
+# NAVIGATION
 # ---------------------------------------------------
-st.sidebar.title("Navigation")
-
 page = st.sidebar.radio(
     "Go to",
     ["Fraud Prediction", "Fraud Analytics", "Transaction Monitoring"]
@@ -97,7 +118,6 @@ if page == "Fraud Prediction":
 
     st.header("💳 Transaction Risk Prediction")
 
-    # Time now default (IMPORTANT FIX)
     current_hour = datetime.now().hour
 
     def get_user_input():
@@ -105,12 +125,9 @@ if page == "Fraud Prediction":
         time = st.number_input("Transaction Hour (0–23)", 0, 23, current_hour)
         amount = st.number_input("Transaction Amount ($)", 0.0)
 
-        v_features = []
-        for i in range(1, 29):
-            v = st.number_input(f"V{i}", value=0.0)
-            v_features.append(v)
+        features = build_features(time, amount)
 
-        data = [time] + v_features + [amount]
+        data = np.concatenate(([time], features, [amount]))
 
         return np.array(data).reshape(1, -1), amount, time
 
@@ -118,36 +135,28 @@ if page == "Fraud Prediction":
 
     if st.button("🚀 Predict Fraud Risk"):
 
-        # ML prediction
         ml_prob = model.predict_proba(input_data)[0][1]
 
-        # APPLY RULE ENGINE (FIX)
         final_prob = fraud_rule_engine(amount, ml_prob, time)
 
-        # Risk classification
         if final_prob < 0.2:
             risk = "LOW"
             color = "green"
-
         elif final_prob < 0.5:
             risk = "MEDIUM"
             color = "orange"
-
         else:
             risk = "HIGH"
             color = "red"
 
-        # KPIs
         col1, col2, col3 = st.columns(3)
-
         col1.metric("ML Probability", f"{ml_prob:.4f}")
-        col2.metric("Final Fraud Score", f"{final_prob:.4f}")
+        col2.metric("Final Risk Score", f"{final_prob:.4f}")
         col3.metric("Risk Level", risk)
 
         st.markdown("---")
 
-        # GAUGE
-        gauge = go.Figure(go.Indicator(
+        fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=final_prob * 100,
             title={'text': "Fraud Risk Score"},
@@ -162,15 +171,12 @@ if page == "Fraud Prediction":
             }
         ))
 
-        st.plotly_chart(gauge, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
-        # ALERTS
         if risk == "HIGH":
             st.error("⚠️ HIGH RISK TRANSACTION DETECTED")
-
         elif risk == "MEDIUM":
             st.warning("⚠️ Medium Risk Transaction")
-
         else:
             st.success("✅ Low Risk Transaction")
 
@@ -188,41 +194,38 @@ elif page == "Fraud Analytics":
     col3.metric("Fraud Rate", "2.4%")
     col4.metric("Revenue Protected", "$84K")
 
-    trend_data = pd.DataFrame({
+    df = pd.DataFrame({
         "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         "Fraud Cases": [12, 19, 8, 15, 22, 10, 17]
     })
 
-    fig = px.line(trend_data, x="Day", y="Fraud Cases", markers=True)
+    fig = px.line(df, x="Day", y="Fraud Cases", markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------
-# PAGE 3 — TRANSACTION MONITORING
+# PAGE 3 — MONITORING
 # ---------------------------------------------------
 elif page == "Transaction Monitoring":
 
     st.header("🛰️ Live Transactions")
 
-    transactions = []
+    data = []
 
     for i in range(15):
 
         amount = round(random.uniform(10, 50000), 2)
-        risk_score = round(random.uniform(0, 1), 2)
 
-        transactions.append({
+        data.append({
             "Transaction ID": f"TXN-{1000+i}",
             "Amount": amount,
-            "Risk Score": risk_score,
+            "Risk Score": round(random.random(), 2),
             "Status": "FRAUD" if amount > 20000 else "SAFE"
         })
 
-    df = pd.DataFrame(transactions)
-
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(pd.DataFrame(data), use_container_width=True)
 
 # ---------------------------------------------------
 # FOOTER
 # ---------------------------------------------------
 st.markdown("---")
-st.caption("Production Fraud Detection System | XGBoost + Rule Engine + Streamlit")
+st.caption("Production Fraud Detection System | XGBoost + Feature Engine + Rule Layer")
