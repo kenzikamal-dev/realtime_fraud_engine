@@ -6,185 +6,223 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import random
+from datetime import datetime
 
 # ---------------------------------------------------
 # PAGE CONFIG
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Real-Time Fraud Analytics",
+    page_title="FICO Fraud Analytics",
     page_icon="🧠",
     layout="wide"
 )
 
 # ---------------------------------------------------
-# LOAD MODEL (PRODUCTION SAFE)
+# LOAD MODEL (SAFE PATH)
 # ---------------------------------------------------
-BASE_DIR = os.path.dirname(__file__)
-MODEL_PATH = os.path.join(BASE_DIR, "../models/xgb_fraud_model.pkl")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "xgb_fraud_model.pkl")
 
 model = joblib.load(MODEL_PATH)
 
 # ---------------------------------------------------
-# SESSION STATE (SIMULATE REAL BEHAVIOR)
+# FRAUD RULE ENGINE (NEW - FIX)
 # ---------------------------------------------------
-if "history" not in st.session_state:
-    st.session_state.history = []
+def fraud_rule_engine(amount, ml_prob, transaction_time):
+    """
+    Enhances ML prediction with banking rules
+    """
+
+    risk_boost = 0
+
+    # Rule 1: High amount risk
+    if amount > 5000:
+        risk_boost += 0.25
+    if amount > 20000:
+        risk_boost += 0.35
+
+    # Rule 2: Midnight risk (0-5 AM)
+    if 0 <= transaction_time <= 5:
+        risk_boost += 0.20
+
+    # Rule 3: Very large ML + rules synergy
+    final_score = ml_prob + risk_boost
+
+    return min(final_score, 1.0)
 
 # ---------------------------------------------------
-# UI HEADER
+# CUSTOM CSS
+# ---------------------------------------------------
+st.markdown("""
+<style>
+.main { background-color: #0E1117; color: white; }
+
+.stButton>button {
+    background-color: #00C897;
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    width: 100%;
+    font-size: 18px;
+}
+
+[data-testid="metric-container"] {
+    background-color: #1E1E1E;
+    border-radius: 10px;
+    padding: 12px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------
+# TITLE
 # ---------------------------------------------------
 st.title("🧠 Real-Time Fraud Analytics Dashboard")
-st.markdown("AI-powered financial risk monitoring system")
+st.markdown("### AI-Powered Financial Risk Monitoring System (Production Mode)")
 
 # ---------------------------------------------------
-# SIDEBAR INPUT
+# SIDEBAR
 # ---------------------------------------------------
-st.sidebar.header("Transaction Input")
+st.sidebar.title("Navigation")
 
-time = st.sidebar.number_input("Transaction Time", 0.0, 100000.0, 1000.0)
-amount = st.sidebar.number_input("Transaction Amount", 0.0, 100000.0, 500.0)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Advanced Mode (Auto Feature Generator)")
-auto_mode = st.sidebar.checkbox("Auto-generate V1–V28 (Recommended)", value=True)
+page = st.sidebar.radio(
+    "Go to",
+    ["Fraud Prediction", "Fraud Analytics", "Transaction Monitoring"]
+)
 
 # ---------------------------------------------------
-# FEATURE ENGINE (IMPORTANT FIX)
+# PAGE 1 — FRAUD PREDICTION
 # ---------------------------------------------------
-def generate_features(amount):
+if page == "Fraud Prediction":
 
-    # realistic fraud signal injection
-    base = np.random.normal(0, 1, 28)
+    st.header("💳 Transaction Risk Prediction")
 
-    # high amount increases anomaly chance
-    fraud_signal = min(amount / 10000, 5)
+    # Time now default (IMPORTANT FIX)
+    current_hour = datetime.now().hour
 
-    # inject fraud behavior pattern
-    if amount > 10000:
-        base += np.random.normal(fraud_signal, 1.5, 28)
+    def get_user_input():
 
-    return base
+        time = st.number_input("Transaction Hour (0–23)", 0, 23, current_hour)
+        amount = st.number_input("Transaction Amount ($)", 0.0)
 
-def get_input():
+        v_features = []
+        for i in range(1, 29):
+            v = st.number_input(f"V{i}", value=0.0)
+            v_features.append(v)
 
-    if auto_mode:
-        v_features = generate_features(amount)
-    else:
-        v_features = np.array([
-            st.sidebar.number_input(f"V{i}", value=0.0)
-            for i in range(1, 29)
-        ])
+        data = [time] + v_features + [amount]
 
-    data = np.hstack([[time], v_features, [amount]])
-    return data.reshape(1, -1)
+        return np.array(data).reshape(1, -1), amount, time
 
-input_data = get_input()
+    input_data, amount, time = get_user_input()
+
+    if st.button("🚀 Predict Fraud Risk"):
+
+        # ML prediction
+        ml_prob = model.predict_proba(input_data)[0][1]
+
+        # APPLY RULE ENGINE (FIX)
+        final_prob = fraud_rule_engine(amount, ml_prob, time)
+
+        # Risk classification
+        if final_prob < 0.2:
+            risk = "LOW"
+            color = "green"
+
+        elif final_prob < 0.5:
+            risk = "MEDIUM"
+            color = "orange"
+
+        else:
+            risk = "HIGH"
+            color = "red"
+
+        # KPIs
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("ML Probability", f"{ml_prob:.4f}")
+        col2.metric("Final Fraud Score", f"{final_prob:.4f}")
+        col3.metric("Risk Level", risk)
+
+        st.markdown("---")
+
+        # GAUGE
+        gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=final_prob * 100,
+            title={'text': "Fraud Risk Score"},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "red"},
+                'steps': [
+                    {'range': [0, 20], 'color': "green"},
+                    {'range': [20, 50], 'color': "orange"},
+                    {'range': [50, 100], 'color': "red"}
+                ]
+            }
+        ))
+
+        st.plotly_chart(gauge, use_container_width=True)
+
+        # ALERTS
+        if risk == "HIGH":
+            st.error("⚠️ HIGH RISK TRANSACTION DETECTED")
+
+        elif risk == "MEDIUM":
+            st.warning("⚠️ Medium Risk Transaction")
+
+        else:
+            st.success("✅ Low Risk Transaction")
 
 # ---------------------------------------------------
-# PREDICTION
+# PAGE 2 — ANALYTICS
 # ---------------------------------------------------
-if st.button("🚀 Predict Fraud Risk"):
+elif page == "Fraud Analytics":
 
-    prob = model.predict_proba(input_data)[0][1]
+    st.header("📊 Fraud Analytics Dashboard")
 
-    # stronger risk logic
-    if prob < 0.3:
-        risk = "LOW"
-        color = "green"
-    elif prob < 0.7:
-        risk = "MEDIUM"
-        color = "orange"
-    else:
-        risk = "HIGH"
-        color = "red"
+    col1, col2, col3, col4 = st.columns(4)
 
-    # store history
-    st.session_state.history.append(prob)
+    col1.metric("Transactions", "12,847")
+    col2.metric("Fraud Alerts", "312")
+    col3.metric("Fraud Rate", "2.4%")
+    col4.metric("Revenue Protected", "$84K")
 
-    # ---------------------------------------------------
-    # METRICS
-    # ---------------------------------------------------
-    col1, col2, col3 = st.columns(3)
+    trend_data = pd.DataFrame({
+        "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "Fraud Cases": [12, 19, 8, 15, 22, 10, 17]
+    })
 
-    col1.metric("Fraud Probability", f"{prob:.4f}")
-    col2.metric("Risk Level", risk)
-    col3.metric("Transaction Amount", f"${amount:,.2f}")
-
-    st.markdown("---")
-
-    # ---------------------------------------------------
-    # GAUGE CHART
-    # ---------------------------------------------------
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=prob * 100,
-        title={'text': "Fraud Risk Score"},
-        gauge={
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "red"},
-            'steps': [
-                {'range': [0, 30], 'color': "green"},
-                {'range': [30, 70], 'color': "orange"},
-                {'range': [70, 100], 'color': "red"}
-            ]
-        }
-    ))
-
+    fig = px.line(trend_data, x="Day", y="Fraud Cases", markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------------------------------------------------
-    # RISK BREAKDOWN CHART
-    # ---------------------------------------------------
-    chart = pd.DataFrame({
-        "Type": ["Safe Score", "Fraud Score"],
-        "Value": [1 - prob, prob]
-    })
-
-    fig2 = px.bar(
-        chart,
-        x="Type",
-        y="Value",
-        color="Type",
-        color_discrete_map={
-            "Safe Score": "green",
-            "Fraud Score": "red"
-        },
-        title="Risk Distribution"
-    )
-
-    st.plotly_chart(fig2, use_container_width=True)
-
-    # ---------------------------------------------------
-    # ALERTS
-    # ---------------------------------------------------
-    if risk == "HIGH":
-        st.error("⚠️ HIGH FRAUD RISK DETECTED")
-    elif risk == "MEDIUM":
-        st.warning("⚠️ Medium Risk Transaction")
-    else:
-        st.success("✅ Transaction is Safe")
-
 # ---------------------------------------------------
-# ANALYTICS SECTION
+# PAGE 3 — TRANSACTION MONITORING
 # ---------------------------------------------------
-st.markdown("---")
-st.subheader("📊 Live Fraud Analytics")
+elif page == "Transaction Monitoring":
 
-if len(st.session_state.history) > 1:
+    st.header("🛰️ Live Transactions")
 
-    hist_df = pd.DataFrame({
-        "Transaction": list(range(len(st.session_state.history))),
-        "Fraud Probability": st.session_state.history
-    })
+    transactions = []
 
-    fig3 = px.line(hist_df, x="Transaction", y="Fraud Probability", markers=True)
-    st.plotly_chart(fig3, use_container_width=True)
+    for i in range(15):
 
-else:
-    st.info("Run multiple predictions to see analytics")
+        amount = round(random.uniform(10, 50000), 2)
+        risk_score = round(random.uniform(0, 1), 2)
+
+        transactions.append({
+            "Transaction ID": f"TXN-{1000+i}",
+            "Amount": amount,
+            "Risk Score": risk_score,
+            "Status": "FRAUD" if amount > 20000 else "SAFE"
+        })
+
+    df = pd.DataFrame(transactions)
+
+    st.dataframe(df, use_container_width=True)
 
 # ---------------------------------------------------
 # FOOTER
 # ---------------------------------------------------
 st.markdown("---")
-st.caption("Production Fraud Detection System | XGBoost + Streamlit + Feature Engineering")
+st.caption("Production Fraud Detection System | XGBoost + Rule Engine + Streamlit")
